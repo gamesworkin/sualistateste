@@ -50,7 +50,19 @@ const state = {
   currentPage: 1,
   viewMode: (typeof localStorage !== "undefined" && localStorage.getItem("catalogViewMode")) || "grid",
   isAdmin: false,
+  adminGameSearch: "",
+  /* Paginação dos menus administrativos (jogos, categorias, plataformas, pendrives) */
+  adminPag: {
+    games: { page: 1, per: 10 },
+    categories: { page: 1, per: 10 },
+    subcategories: { page: 1, per: 10 },
+    pendrives: { page: 1, per: 10 },
+  },
 };
+
+/* Quantidade mínima de itens para exibir os controles de paginação no admin */
+const ADMIN_PAG_MIN = 10;
+const ADMIN_PER_OPTIONS = [10, 20, 30];
 
 /* =========================================================
  * UTIL - Funções auxiliares
@@ -80,6 +92,20 @@ function esc(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+/** Ordenação consistente em português, sem alterar o catálogo original. */
+const gameNameCollator = new Intl.Collator("pt-BR", { sensitivity: "base", numeric: true });
+function sortedGames(games) {
+  return games.slice().sort((a, b) => gameNameCollator.compare(a.name || "", b.name || ""));
+}
+function normalizeSearch(value) {
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR").trim();
+}
+function getAdminGames() {
+  const q = normalizeSearch(state.adminGameSearch);
+  return sortedGames(state.games).filter(g => !q ||
+    [g.name, g.code, g.category, g.subcategory].some(value => normalizeSearch(value).includes(q)));
 }
 
 /** Data/hora atual formatada */
@@ -239,7 +265,7 @@ function buildPendriveSelect() {
   }
 }
 
-/** Constrói filtros de categoria/subcategoria */
+/** Constrói filtros de categoria/plataforma */
 function buildFilterOptions() {
   const cats = [...state.categories].sort((a, b) => (a.order || 0) - (b.order || 0));
   $("#categoryFilter").innerHTML =
@@ -248,7 +274,7 @@ function buildFilterOptions() {
 
   const subs = [...state.subcategories].sort((a, b) => (a.order || 0) - (b.order || 0));
   $("#subcategoryFilter").innerHTML =
-    `<option value="">Todas subcategorias</option>` +
+    `<option value="">Todas plataformas</option>` +
     subs.map((s) => `<option value="${esc(s.name)}">${esc(s.name)}</option>`).join("");
 }
 
@@ -268,8 +294,7 @@ function getFilteredGames() {
       (g.subcategory || "").toLowerCase().includes(q)
     );
   }
-  if (sort === "alpha") arr.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  if (sort === "alpha") arr.sort((a, b) => (a.code || "").localeCompare(b.code || ""));
+  if (sort === "alpha") arr = sortedGames(arr);
   if (sort === "light") arr.sort((a, b) => (a.size || 0) - (b.size || 0));
   if (sort === "heavy") arr.sort((a, b) => (b.size || 0) - (a.size || 0));
   return arr;
@@ -400,6 +425,18 @@ function updatePendriveBar() {
   bar.style.background = color;
 
   $("#cartBadge").textContent = state.cart.length;
+  updateFloatFinish();
+}
+
+/** Mostra/esconde o botão flutuante "Finalizar lista e enviar" */
+function updateFloatFinish() {
+  const btn = $("#floatFinishBtn");
+  if (!btn) return;
+  const count = state.cart.length;
+  btn.classList.toggle("hidden", count === 0);
+  document.body.classList.toggle("has-float-finish", count > 0);
+  const c = $("#floatFinishCount");
+  if (c) c.textContent = count;
 }
 
 /** Renderiza carrinho no modal */
@@ -410,7 +447,7 @@ function renderCart() {
   const used = cartTotalGB();
   const over = used > cap;
 
-  wrap.innerHTML = state.cart.length ? state.cart.map((g) => `
+  wrap.innerHTML = state.cart.length ? sortedGames(state.cart).map((g) => `
     <div class="cart-item">
       <img src="${esc(g.image || "")}" alt=""/>
       <div>
@@ -468,7 +505,7 @@ async function handleCheckout(e) {
     firstName: data.firstName, lastName: data.lastName,
     whatsapp: data.whatsapp, city: data.city, uf: data.uf,
     pendriveName: p.name, capacity: cap, used, free,
-    games: state.cart.map((g) => ({ id: g.id, name: g.name, size: g.size, category: g.category })),
+    games: sortedGames(state.cart).map((g) => ({ id: g.id, name: g.name, size: g.size, category: g.category })),
     quantity: state.cart.length,
     status: "pendente",
     date: t.date, time: t.time, createdAt: t.iso,
@@ -530,7 +567,8 @@ async function buildOrderImage(order) {
   const W = 900;
   const headerH = 260;
   const rowH = 34;
-  const rows = order.games.length;
+  const games = sortedGames(order.games);
+  const rows = games.length;
   const H = headerH + rows * rowH + 120;
 
   const canvas = document.createElement("canvas");
@@ -566,7 +604,7 @@ async function buildOrderImage(order) {
   // Título
   ctx.fillStyle = "#ffffff";
   ctx.font = "bold 30px Orbitron, Arial";
-  ctx.fillText(state.settings.siteTitle || "Sua Lista | Workin'Store", infoX, 60);
+  ctx.fillText(state.settings.siteTitle || "Sua Lista | Workin'Store", infoX, 60, W - infoX - 30);
 
   ctx.fillStyle = "#a4a9c9";
   ctx.font = "16px Rajdhani, Arial";
@@ -593,7 +631,7 @@ async function buildOrderImage(order) {
     ctx.fillStyle = "#a4a9c9";
     ctx.fillText(k, x, y + line * 26);
     ctx.fillStyle = "#eef1ff";
-    ctx.fillText(v, x + 110, y + line * 26);
+    ctx.fillText(v, x + 110, y + line * 26, W / 2 - 150);
   });
 
   // Divisor
@@ -607,7 +645,7 @@ async function buildOrderImage(order) {
 
   ctx.font = "15px Rajdhani, Arial";
   ctx.fillStyle = "#eef1ff";
-  order.games.forEach((g, i) => {
+  games.forEach((g, i) => {
     const yy = headerH + 40 + i * rowH;
     if (i % 2 === 0) {
       ctx.fillStyle = "rgba(255,255,255,.03)";
@@ -616,7 +654,7 @@ async function buildOrderImage(order) {
     ctx.fillStyle = "#a4a9c9";
     ctx.fillText(String(i + 1).padStart(3, "0"), 30, yy);
     ctx.fillStyle = "#eef1ff";
-    ctx.fillText(g.name.substring(0, 60), 80, yy);
+    ctx.fillText(g.name || "", 80, yy, W - 230);
     ctx.fillStyle = "#7dd3fc";
     ctx.textAlign = "right";
     ctx.fillText(`${fmt(g.size)} GB`, W - 30, yy);
@@ -630,7 +668,7 @@ async function buildOrderImage(order) {
   ctx.fillStyle = "#a4a9c9";
   ctx.font = "14px Rajdhani, Arial";
   ctx.textAlign = "center";
-  ctx.fillText(state.settings.jpgMessage || "Obrigado pela preferência!", W / 2, footY + 30);
+  ctx.fillText(state.settings.jpgMessage || "Obrigado pela preferência!", W / 2, footY + 30, W - 60);
   ctx.textAlign = "left";
 
   return canvas.toDataURL("image/jpeg", 0.9);
@@ -653,12 +691,32 @@ function loadImage(url) {
 function bindLogin() {
   $("#loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.target).entries());
+    const form = e.target;
+    const data = Object.fromEntries(new FormData(form).entries());
+    const btn = form.querySelector('button[type="submit"]');
+    const originalHtml = btn ? btn.innerHTML : "";
+
+    // Feedback visual: spinner enquanto autentica
+    if (btn) {
+      btn.disabled = true;
+      btn.classList.add("is-loading");
+      btn.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span> Autenticando...`;
+    }
+    form.classList.add("form-loading");
+
     try {
       await auth.signInWithEmailAndPassword(data.email, data.password);
       closeModal("loginModal");
+      form.reset();
     } catch (err) {
       toast(err.message, "error");
+    } finally {
+      form.classList.remove("form-loading");
+      if (btn) {
+        btn.disabled = false;
+        btn.classList.remove("is-loading");
+        btn.innerHTML = originalHtml;
+      }
     }
   });
 
@@ -676,14 +734,109 @@ function bindLogin() {
 function showPublic() {
   state.isAdmin = false;
   $("#publicApp").classList.remove("hidden");
-  $("#adminApp").classList.add("hidden");
+  closeModal("adminModal");
+  document.body.classList.remove("modal-open");
 }
 function showAdmin() {
   state.isAdmin = true;
-  $("#adminApp").classList.remove("hidden");
-  $("#publicApp").classList.add("hidden");
+  // A área administrativa agora é um modal sobreposto ao site público.
+  $("#publicApp").classList.remove("hidden");
+  openModal("adminModal");
+  document.body.classList.add("modal-open");
   listenOrders();
   renderCurrentAdminView();
+}
+
+
+/* =========================================================
+ * ADMIN - PAGINAÇÃO GENÉRICA
+ * ========================================================= */
+
+/** Retorna (criando se preciso) o estado de paginação de um menu admin */
+function adminPagState(key) {
+  if (!state.adminPag[key]) state.adminPag[key] = { page: 1, per: 10 };
+  return state.adminPag[key];
+}
+
+/**
+ * Recorta a lista de acordo com a paginação do menu e devolve o HTML dos controles.
+ * Os controles só aparecem quando existem mais de ADMIN_PAG_MIN itens.
+ * Máximo de 5 números de página; setas < > aparecem quando houver mais páginas.
+ */
+function adminPaginate(key, items) {
+  const st = adminPagState(key);
+  const total = items.length;
+
+  if (total <= ADMIN_PAG_MIN) {
+    st.page = 1;
+    return { items, controls: "" };
+  }
+
+  const per = ADMIN_PER_OPTIONS.includes(Number(st.per)) ? Number(st.per) : 10;
+  st.per = per;
+  const pages = Math.max(1, Math.ceil(total / per));
+  if (st.page > pages) st.page = pages;
+  if (st.page < 1) st.page = 1;
+  const cur = st.page;
+
+  const start = (cur - 1) * per;
+  const slice = items.slice(start, start + per);
+
+  // Janela de no máximo 5 páginas
+  const WINDOW = 5;
+  let first = Math.max(1, cur - Math.floor(WINDOW / 2));
+  let last = first + WINDOW - 1;
+  if (last > pages) { last = pages; first = Math.max(1, last - WINDOW + 1); }
+
+  const showArrows = pages > WINDOW || pages > 1;
+
+  let nums = "";
+  for (let i = first; i <= last; i++) {
+    nums += `<button type="button" class="apg-num ${i === cur ? "active" : ""}" data-admin-page="${key}|${i}">${i}</button>`;
+  }
+
+  const perBtns = ADMIN_PER_OPTIONS.map((n) =>
+    `<button type="button" class="apg-per ${n === per ? "active" : ""}" data-admin-per="${key}|${n}">${n}</button>`
+  ).join("");
+
+  const controls = `
+    <div class="admin-pagination">
+      <div class="apg-filter">
+        <i class="fa-solid fa-filter"></i>
+        <span>Exibir</span>
+        <div class="apg-per-group" role="group" aria-label="Itens por página">${perBtns}</div>
+        <span class="apg-info">${start + 1}–${Math.min(start + per, total)} de ${total}</span>
+      </div>
+      <div class="apg-pages">
+        ${showArrows ? `<button type="button" class="apg-arrow" data-admin-page="${key}|${cur - 1}" ${cur === 1 ? "disabled" : ""} aria-label="Página anterior"><i class="fa-solid fa-chevron-left"></i></button>` : ""}
+        ${nums}
+        ${showArrows ? `<button type="button" class="apg-arrow" data-admin-page="${key}|${cur + 1}" ${cur === pages ? "disabled" : ""} aria-label="Próxima página"><i class="fa-solid fa-chevron-right"></i></button>` : ""}
+      </div>
+    </div>`;
+
+  return { items: slice, controls };
+}
+
+/** Liga os eventos dos controles de paginação do admin */
+function wireAdminPagination() {
+  const c = $("#viewContainer");
+  if (!c) return;
+  c.querySelectorAll("[data-admin-per]").forEach((b) => b.onclick = () => {
+    const [key, per] = b.dataset.adminPer.split("|");
+    const st = adminPagState(key);
+    st.per = Number(per) || 10;
+    st.page = 1;
+    renderCurrentAdminView();
+  });
+  c.querySelectorAll("[data-admin-page]").forEach((b) => b.onclick = () => {
+    if (b.disabled) return;
+    const [key, page] = b.dataset.adminPage.split("|");
+    const st = adminPagState(key);
+    st.page = Math.max(1, Number(page) || 1);
+    renderCurrentAdminView();
+    const cont = $("#viewContainer");
+    if (cont) cont.scrollTo({ top: 0, behavior: "smooth" });
+  });
 }
 
 /* =========================================================
@@ -708,7 +861,7 @@ function renderCurrentAdminView() {
   }
   $("#viewTitle").textContent = ({
     dashboard: "Dashboard", orders: "Pedidos", games: "Jogos",
-    categories: "Categorias", subcategories: "Subcategorias",
+    categories: "Categorias", subcategories: "Plataformas",
     pendrives: "Pendrives", settings: "Configurações",
   })[currentAdminView];
   const c = container;
@@ -799,11 +952,22 @@ function viewGames() {
         <h2>Gerenciar jogos</h2>
         <button class="btn btn-primary" data-add-game><i class="fa-solid fa-plus"></i> Novo jogo</button>
       </div>
+      <div class="filter-item search admin-game-search">
+        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <input id="adminGameSearch" type="search" aria-label="Buscar jogos" placeholder="Buscar por nome, código, categoria ou plataforma..." value="${esc(state.adminGameSearch)}" autocomplete="off" />
+      </div>
+      <div id="adminGamesResults">${buildAdminGamesResults()}</div>
+    </div>`;
+}
+function buildAdminGamesResults() {
+  const { items, controls } = adminPaginate("games", getAdminGames());
+  return `
+      ${controls}
       <div class="table-wrap">
         <table class="admin-table">
-          <thead><tr><th></th><th>Nome</th><th>Categoria</th><th>Subcategoria</th><th>GB</th><th>Código</th><th>Ações</th></tr></thead>
+          <thead><tr><th></th><th>Nome</th><th>Categoria</th><th>Plataforma</th><th>GB</th><th>Código</th><th>Ações</th></tr></thead>
           <tbody>
-            ${state.games.map(g => `
+            ${items.map(g => `
               <tr>
                 <td><img class="thumb-sm" src="${esc(g.image || "")}" alt=""/></td>
                 <td>${esc(g.name)}</td>
@@ -816,26 +980,28 @@ function viewGames() {
                   <button class="icon-btn danger" data-del-game="${g.id}"><i class="fa-solid fa-trash"></i></button>
                 </td>
               </tr>
-            `).join("") || `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">Nenhum jogo cadastrado</td></tr>`}
+            `).join("") || `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:20px;">${state.adminGameSearch ? "Nenhum jogo encontrado para esta busca" : "Nenhum jogo cadastrado"}</td></tr>`}
           </tbody>
         </table>
       </div>
-    </div>
+      ${controls}
   `;
 }
 
 function viewSimpleList(title, key, refPath) {
-  const items = [...state[key]].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const all = [...state[key]].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const { items, controls } = adminPaginate(key, all);
   const inputId = `newSimpleName_${refPath}`;
   return `
     <div class="panel">
       <div class="panel-head">
         <h2>${title}</h2>
-        <div style="display:flex;gap:8px;">
+        <div class="simple-add-controls">
           <input id="${inputId}" placeholder="Digite o nome e pressione Enter" data-simple-input="${refPath}" autocomplete="off"/>
           <button class="btn btn-primary" data-add-simple="${refPath}"><i class="fa-solid fa-plus"></i> Adicionar</button>
         </div>
       </div>
+      ${controls}
       <div class="table-wrap">
         <table class="admin-table">
           <thead><tr><th>Ordem</th><th>Nome</th><th>Ações</th></tr></thead>
@@ -853,20 +1019,23 @@ function viewSimpleList(title, key, refPath) {
           </tbody>
         </table>
       </div>
+      ${controls}
     </div>
   `;
 }
 function viewCategories() { return viewSimpleList("Categorias", "categories", "categories"); }
-function viewSubcategories() { return viewSimpleList("Subcategorias", "subcategories", "subcategories"); }
+function viewSubcategories() { return viewSimpleList("Plataformas", "subcategories", "subcategories"); }
 
 function viewPendrives() {
-  const items = [...state.pendrives].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const all = [...state.pendrives].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const { items, controls } = adminPaginate("pendrives", all);
   return `
     <div class="panel">
       <div class="panel-head">
         <h2>Pendrives</h2>
         <button class="btn btn-primary" data-add-pen><i class="fa-solid fa-plus"></i> Novo</button>
       </div>
+      ${controls}
       <div class="table-wrap">
         <table class="admin-table">
           <thead><tr><th>Ordem</th><th>Nome</th><th>Capacidade real (GB)</th><th>Ações</th></tr></thead>
@@ -881,10 +1050,11 @@ function viewPendrives() {
                   <button class="icon-btn danger" data-del-pen="${p.id}"><i class="fa-solid fa-trash"></i></button>
                 </td>
               </tr>
-            `).join("")}
+            `).join("") || `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">Nenhum pendrive cadastrado</td></tr>`}
           </tbody>
         </table>
       </div>
+      ${controls}
     </div>
   `;
 }
@@ -929,6 +1099,9 @@ function viewSettings() {
 function wireAdminActions() {
   const c = $("#viewContainer");
 
+  // Controles de paginação dos menus
+  wireAdminPagination();
+
   // === ORDERS ===
   c.querySelectorAll("[data-view-jpg]").forEach((b) => b.onclick = () => {
     const o = state.orders.find(x => x.id === b.dataset.viewJpg);
@@ -962,6 +1135,14 @@ function wireAdminActions() {
   };
 
   // === GAMES ===
+  const gs = c.querySelector("#adminGameSearch");
+  if (gs) gs.oninput = () => {
+    state.adminGameSearch = gs.value;
+    adminPagState("games").page = 1;
+    const results = c.querySelector("#adminGamesResults");
+    if (results) results.innerHTML = buildAdminGamesResults();
+    wireAdminActions();
+  };
   const addG = c.querySelector("[data-add-game]");
   if (addG) addG.onclick = () => openGameForm();
   c.querySelectorAll("[data-edit-game]").forEach(b => b.onclick = () => openGameForm(b.dataset.editGame));
@@ -983,7 +1164,7 @@ function wireAdminActions() {
       const order = (Array.isArray(state[path]) ? state[path].length : 0) + 1;
       await db.ref(`${path}/${id}`).set({ id, name, order });
       if (input) input.value = "";
-      toast(`${path === "subcategories" ? "Subcategoria" : "Categoria"} adicionada`, "success");
+      toast(`${path === "subcategories" ? "Plataforma" : "Categoria"} adicionada`, "success");
     } catch (err) {
       console.error("Erro ao adicionar em", path, err);
       toast("Erro ao salvar: " + (err?.message || err), "error");
@@ -1063,7 +1244,7 @@ function openGameForm(editId) {
             <input required name="name" placeholder="Nome" value="${esc(g.name || "")}"/>
             <input required name="code" placeholder="Código único" value="${esc(g.code || "")}"/>
             <select required name="category">${["", ...state.categories.map(c => c.name)].map(n => `<option ${g.category === n ? "selected" : ""} value="${esc(n)}">${esc(n || "Categoria")}</option>`).join("")}</select>
-            <select name="subcategory">${["", ...state.subcategories.map(c => c.name)].map(n => `<option ${g.subcategory === n ? "selected" : ""} value="${esc(n)}">${esc(n || "Subcategoria")}</option>`).join("")}</select>
+            <select name="subcategory">${["", ...state.subcategories.map(c => c.name)].map(n => `<option ${g.subcategory === n ? "selected" : ""} value="${esc(n)}">${esc(n || "Plataforma")}</option>`).join("")}</select>
             <input name="compatibility" placeholder="Compatibilidade" value="${esc(g.compatibility || "")}"/>
             <input name="language" placeholder="Idioma" value="${esc(g.language || "")}"/>
             <input required type="number" step="0.01" name="size" placeholder="Tamanho GB" value="${g.size ?? ""}"/>
@@ -1144,12 +1325,35 @@ function bindPublicUI() {
   $("#pendriveSelect").addEventListener("change", (e) => { state.selectedPendriveId = e.target.value; updatePendriveBar(); renderCart(); });
 
   $("#openCartBtn").addEventListener("click", () => { renderCart(); openModal("cartModal"); });
-  $("#adminLoginBtn").addEventListener("click", () => openModal("loginModal"));
+  // Área restrita: se já estiver autenticado como admin, abre direto o painel
+  $("#adminLoginBtn").addEventListener("click", () => {
+    const user = auth.currentUser;
+    if (state.isAdmin || (user && user.email === ADMIN_EMAIL)) {
+      state.isAdmin = true;
+      openModal("adminModal");
+      document.body.classList.add("modal-open");
+      renderCurrentAdminView();
+      return;
+    }
+    openModal("loginModal");
+  });
+
+  // Botão flutuante: abre a lista já pronta para finalizar
+  const floatBtn = $("#floatFinishBtn");
+  if (floatBtn) floatBtn.addEventListener("click", () => {
+    renderCart();
+    openModal("cartModal");
+    const form = $("#checkoutForm");
+    if (form) setTimeout(() => form.scrollIntoView({ behavior: "smooth", block: "nearest" }), 120);
+  });
 
   // Fechar modais
   document.body.addEventListener("click", (e) => {
     const close = e.target.closest("[data-close]");
-    if (close) closeModal(close.dataset.close);
+    if (close) {
+      closeModal(close.dataset.close);
+      if (close.dataset.close === "adminModal") document.body.classList.remove("modal-open");
+    }
   });
 
   // Carrinho: remover / validar / submit
@@ -1160,6 +1364,23 @@ function bindPublicUI() {
   $("#checkoutForm").addEventListener("input", validateCheckout);
   $("#checkoutForm").addEventListener("submit", handleCheckout);
 
+// Efeito de pulsação suave no botão do WhatsApp
+const waButton = document.querySelector('.whatsapp-float');
+if (waButton) {
+    waButton.style.animation = "pulse 2s infinite";
+    
+    // Injetando o keyframe da animação via JS para não precisar mexer no CSS
+    const style = document.createElement('style');
+    style.innerHTML = `
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(37, 211, 102, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0); }
+        }
+    `;
+    document.head.appendChild(style);
+}
+  
   // Admin nav
   document.body.addEventListener("click", (e) => {
     const nav = e.target.closest(".nav-item[data-view]");
@@ -1168,11 +1389,11 @@ function bindPublicUI() {
       $$(".nav-item").forEach(n => n.classList.remove("active"));
       nav.classList.add("active");
       renderCurrentAdminView();
-      $(".admin-sidebar").classList.remove("open");
+      const tabs = $(".admin-tabs");
+      if (tabs) nav.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
     }
   });
   $("#logoutBtn").addEventListener("click", () => auth.signOut());
-  $("#mobileMenuBtn").addEventListener("click", () => $(".admin-sidebar").classList.toggle("open"));
 }
 
 /* =========================================================

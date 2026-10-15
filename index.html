@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Sua Lista | Workin'Store - Monte sua lista de jogos e escolha seu pendrive." />
   <title>Workin'Store | Sua lista</title>
+  <link rel="manifest" href="manifest.json">
   <link id="faviconLink" rel="icon" href="favicon.ico" type="image/x-icon" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -35,8 +36,8 @@
             <span>Minha Lista</span>
             <span id="cartBadge" class="badge">0</span>
           </button>
-          <button id="adminLoginBtn" class="btn btn-ghost" title="Área do administrador">
-            <i class="fa-solid fa-user-shield"></i>
+          <button id="adminLoginBtn" class="admin-access" title="." aria-label="Área restrita">
+            <span class="admin-dot"></span>
           </button>
         </div>
       </div>
@@ -66,10 +67,10 @@
     <section class="filters glass">
       <div class="filter-item search">
         <i class="fa-solid fa-magnifying-glass"></i>
-        <input id="searchInput" type="text" placeholder="Pesquisar por nome, código, categoria ou subcategoria..." />
+        <input id="searchInput" type="text" placeholder="Pesquisar por nome, código, categoria ou plataforma..." />
       </div>
       <select id="categoryFilter" class="select-neon"><option value="">Todas categorias</option></select>
-      <select id="subcategoryFilter" class="select-neon"><option value="">Todas subcategorias</option></select>
+      <select id="subcategoryFilter" class="select-neon"><option value="">Todas plataformas</option></select>
       <select id="sortFilter" class="select-neon">
         <option value="alpha">Ordem alfabética</option>
         <option value="light">Mais leves</option>
@@ -91,8 +92,8 @@
 
     <!-- Aviso sobre jogos e patches (traduzidos/hacks) -->
     <div class="warn-official" role="alert">
-      <div class="warn-official-title"><i class="fa-solid fa-triangle-exclamation"></i> Aviso sobre jogos e patches (traduzidos/hacks)</div>
-      <p>Jogos não-oficiais (traduções para PT-BR, patches ou versões alternativas) podem apresentar bugs, travamentos, tela preta ou problemas de compatibilidade. O funcionamento do jogo não é garantido e varia conforme o modelo e estado do seu PlayStation 2.</p>
+      <div class="warn-official-title"><i class="fa-solid fa-triangle-exclamation"></i> Aviso sobre todos os jogos e patches (Traduzidos/Hacks)</div>
+      <p>Jogos oficiais e não-oficiais (traduções para PT-BR, patches ou versões alternativas) podem apresentar bugs, travamentos, tela preta ou problemas de compatibilidade. O funcionamento do jogo não é garantido e varia conforme o modelo e estado do seu PlayStation 2.</p>
     </div>
 
     <!-- Catálogo -->
@@ -188,10 +189,10 @@
     <div class="modal-content glass wide">
       <button class="modal-close" data-close="jpgModal"><i class="fa-solid fa-xmark"></i></button>
       <h2>Pedido gerado</h2>
-      <img id="jpgPreview" alt="Pedido" style="max-width:100%;border-radius:12px;" />
+      <img id="jpgPreview" alt="Pedido" class="order-preview" />
       <div class="row-actions">
         <a id="downloadJpg" class="btn btn-primary" download="pedido.jpg"><i class="fa-solid fa-download"></i> Baixar JPG</a>
-        <a id="sendWhats" class="btn btn-neon" target="_blank"><i class="fa-brands fa-whatsapp"></i> Enviar no WhatsApp</a>
+        <a id="sendWhats" class="btn btn-whatsapp" target="_blank" rel="noopener noreferrer"><i class="fa-brands fa-whatsapp"></i> Enviar no WhatsApp</a>
       </div>
     </div>
   </div>
@@ -199,33 +200,41 @@
   <!-- ============================================================
        PAINEL ADMINISTRATIVO
        ============================================================ -->
-  <div id="adminApp" class="hidden admin-app">
-    <aside class="admin-sidebar glass">
-      <div class="brand small">
-        <i class="fa-solid fa-gamepad neon-purple"></i>
-        <h2>Admin</h2>
-      </div>
-      <nav class="admin-nav">
-        <button class="nav-item active" data-view="dashboard"><i class="fa-solid fa-gauge-high"></i> Dashboard</button>
-        <button class="nav-item" data-view="orders"><i class="fa-solid fa-receipt"></i> Pedidos</button>
-        <button class="nav-item" data-view="games"><i class="fa-solid fa-gamepad"></i> Jogos</button>
-        <button class="nav-item" data-view="categories"><i class="fa-solid fa-tags"></i> Categorias</button>
-        <button class="nav-item" data-view="subcategories"><i class="fa-solid fa-tag"></i> Subcategorias</button>
-        <button class="nav-item" data-view="pendrives"><i class="fa-solid fa-hard-drive"></i> Pendrives</button>
-        <button class="nav-item" data-view="settings"><i class="fa-solid fa-sliders"></i> Configurações</button>
-        <button id="logoutBtn" class="nav-item danger"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
-      </nav>
-    </aside>
-    <main class="admin-main">
-      <header class="admin-topbar glass">
-        <button id="mobileMenuBtn" class="btn btn-ghost"><i class="fa-solid fa-bars"></i></button>
-        <h1 id="viewTitle">Dashboard</h1>
-        <div class="user-chip"><i class="fa-solid fa-user"></i> admin</div>
+  <div id="adminModal" class="modal hidden admin-modal">
+    <div class="modal-content glass admin-modal-content">
+      <header class="admin-modal-header">
+        <div class="admin-modal-title">
+          <i class="fa-solid fa-gamepad neon-purple"></i>
+          <h2 id="viewTitle">Dashboard</h2>
+          <span class="user-chip"><i class="fa-solid fa-user"></i> admin</span>
+        </div>
+        <button class="modal-close" data-close="adminModal" aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button>
+        <nav class="admin-tabs" aria-label="Menu administrativo">
+          <button class="nav-item active" data-view="dashboard"><i class="fa-solid fa-gauge-high"></i> <span>Dashboard</span></button>
+          <button class="nav-item" data-view="orders"><i class="fa-solid fa-receipt"></i> <span>Pedidos</span></button>
+          <button class="nav-item" data-view="games"><i class="fa-solid fa-gamepad"></i> <span>Jogos</span></button>
+          <button class="nav-item" data-view="categories"><i class="fa-solid fa-tags"></i> <span>Categorias</span></button>
+          <button class="nav-item" data-view="subcategories"><i class="fa-solid fa-tag"></i> <span>Plataformas</span></button>
+          <button class="nav-item" data-view="pendrives"><i class="fa-solid fa-hard-drive"></i> <span>Pendrives</span></button>
+          <button class="nav-item" data-view="settings"><i class="fa-solid fa-sliders"></i> <span>Configurações</span></button>
+          <button id="logoutBtn" class="nav-item danger"><i class="fa-solid fa-right-from-bracket"></i> <span>Sair</span></button>
+        </nav>
       </header>
       <section id="viewContainer" class="view-container"></section>
-    </main>
+    </div>
   </div>
 
+  <!-- Botão flutuante: finalizar lista -->
+  <button id="floatFinishBtn" class="float-finish hidden" type="button">
+    <i class="fa-solid fa-paper-plane"></i>
+    <span>Finalizar lista e enviar</span>
+    <span id="floatFinishCount" class="float-count">0</span>
+  </button>
+
+<a href="https://wa.me/5588988470190" target="_blank" class="whatsapp-float">
+    		<img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp">
+		</a>
+  
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
